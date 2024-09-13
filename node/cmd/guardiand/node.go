@@ -149,7 +149,6 @@ var (
 	aptosHandle  *string
 
 	suiRPC           *string
-	suiWS            *string
 	suiMoveEventType *string
 
 	solanaRPC *string
@@ -179,13 +178,14 @@ var (
 	xlayerRPC      *string
 	xlayerContract *string
 
-	lineaRPC            *string
-	lineaContract       *string
-	lineaRollUpUrl      *string
-	lineaRollUpContract *string
+	lineaRPC      *string
+	lineaContract *string
 
 	berachainRPC      *string
 	berachainContract *string
+
+	snaxchainRPC      *string
+	snaxchainContract *string
 
 	sepoliaRPC      *string
 	sepoliaContract *string
@@ -229,7 +229,8 @@ var (
 	// Prometheus remote write URL
 	promRemoteURL *string
 
-	chainGovernorEnabled *bool
+	chainGovernorEnabled      *bool
+	governorFlowCancelEnabled *bool
 
 	ccqEnabled           *bool
 	ccqAllowedRequesters *string
@@ -247,6 +248,8 @@ var (
 
 	// env is the mode we are running in, Mainnet, Testnet or UnsafeDevnet.
 	env common.Environment
+
+	subscribeToVAAs *bool
 )
 
 func init() {
@@ -350,7 +353,6 @@ func init() {
 	aptosHandle = NodeCmd.Flags().String("aptosHandle", "", "aptos handle")
 
 	suiRPC = node.RegisterFlagWithValidationOrFail(NodeCmd, "suiRPC", "Sui RPC URL", "http://sui:9000", []string{"http", "https"})
-	suiWS = node.RegisterFlagWithValidationOrFail(NodeCmd, "suiWS", "Sui WS URL", "ws://sui:9000", []string{"ws", "wss"})
 	suiMoveEventType = NodeCmd.Flags().String("suiMoveEventType", "", "Sui move event type for publish_message")
 
 	solanaRPC = node.RegisterFlagWithValidationOrFail(NodeCmd, "solanaRPC", "Solana RPC URL (required)", "http://solana-devnet:8899", []string{"http", "https"})
@@ -385,11 +387,12 @@ func init() {
 
 	lineaRPC = node.RegisterFlagWithValidationOrFail(NodeCmd, "lineaRPC", "Linea RPC URL", "ws://eth-devnet:8545", []string{"ws", "wss"})
 	lineaContract = NodeCmd.Flags().String("lineaContract", "", "Linea contract address")
-	lineaRollUpUrl = NodeCmd.Flags().String("lineaRollUpUrl", "", "Linea roll up URL")
-	lineaRollUpContract = NodeCmd.Flags().String("lineaRollUpContract", "", "Linea roll up contract address")
 
 	berachainRPC = node.RegisterFlagWithValidationOrFail(NodeCmd, "berachainRPC", "Berachain RPC URL", "ws://eth-devnet:8545", []string{"ws", "wss"})
 	berachainContract = NodeCmd.Flags().String("berachainContract", "", "Berachain contract address")
+
+	snaxchainRPC = node.RegisterFlagWithValidationOrFail(NodeCmd, "snaxchainRPC", "Snaxchain RPC URL", "ws://eth-devnet:8545", []string{"ws", "wss"})
+	snaxchainContract = NodeCmd.Flags().String("snaxchainContract", "", "Snaxchain contract address")
 
 	baseRPC = node.RegisterFlagWithValidationOrFail(NodeCmd, "baseRPC", "Base RPC URL", "ws://eth-devnet:8545", []string{"ws", "wss"})
 	baseContract = NodeCmd.Flags().String("baseContract", "", "Base contract address")
@@ -431,6 +434,7 @@ func init() {
 	promRemoteURL = NodeCmd.Flags().String("promRemoteURL", "", "Prometheus remote write URL (Grafana)")
 
 	chainGovernorEnabled = NodeCmd.Flags().Bool("chainGovernorEnabled", false, "Run the chain governor")
+	governorFlowCancelEnabled = NodeCmd.Flags().Bool("governorFlowCancelEnabled", false, "Enable flow cancel on the governor")
 
 	ccqEnabled = NodeCmd.Flags().Bool("ccqEnabled", false, "Enable cross chain query support")
 	ccqAllowedRequesters = NodeCmd.Flags().String("ccqAllowedRequesters", "", "Comma separated list of signers allowed to submit cross chain queries")
@@ -443,6 +447,8 @@ func init() {
 	gatewayRelayerContract = NodeCmd.Flags().String("gatewayRelayerContract", "", "Address of the smart contract on wormchain to receive relayed VAAs")
 	gatewayRelayerKeyPath = NodeCmd.Flags().String("gatewayRelayerKeyPath", "", "Path to gateway relayer private key for signing transactions")
 	gatewayRelayerKeyPassPhrase = NodeCmd.Flags().String("gatewayRelayerKeyPassPhrase", "", "Pass phrase used to unarmor the gateway relayer key file")
+
+	subscribeToVAAs = NodeCmd.Flags().Bool("subscribeToVAAs", false, "Guardiand should subscribe to incoming signed VAAs, set to true if running a public RPC node")
 }
 
 var (
@@ -537,6 +543,11 @@ func runNode(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	if !(*chainGovernorEnabled) && *governorFlowCancelEnabled {
+		fmt.Println("Flow cancel can only be enabled when the governor is enabled")
+		os.Exit(1)
+	}
+
 	logger := zap.New(zapcore.NewCore(
 		consoleEncoder{zapcore.NewConsoleEncoder(
 			zap.NewDevelopmentEncoderConfig())},
@@ -604,6 +615,9 @@ func runNode(cmd *cobra.Command, args []string) {
 
 	// Verify flags
 
+	if *nodeName == "" {
+		logger.Fatal("Please specify --nodeName")
+	}
 	if *nodeKeyPath == "" && env != common.UnsafeDevNet { // In devnet mode, keys are deterministically generated.
 		logger.Fatal("Please specify --nodeKey")
 	}
@@ -628,6 +642,100 @@ func runNode(cmd *cobra.Command, args []string) {
 		logger.Fatal("Please specify --ethRPC")
 	}
 
+	// In devnet mode, we generate a deterministic guardian key and write it to disk.
+	if env == common.UnsafeDevNet {
+		err := devnet.GenerateAndStoreDevnetGuardianKey(*guardianKeyPath)
+		if err != nil {
+			logger.Fatal("failed to generate devnet guardian key", zap.Error(err))
+		}
+	}
+
+	// Load guardian key
+	gk, err := common.LoadGuardianKey(*guardianKeyPath, env == common.UnsafeDevNet)
+	if err != nil {
+		logger.Fatal("failed to load guardian key", zap.Error(err))
+	}
+
+	logger.Info("Loaded guardian key", zap.String(
+		"address", ethcrypto.PubkeyToAddress(gk.PublicKey).String()))
+
+	// Load p2p private key
+	var p2pKey libp2p_crypto.PrivKey
+	if env == common.UnsafeDevNet {
+		idx, err := devnet.GetDevnetIndex()
+		if err != nil {
+			logger.Fatal("Failed to parse hostname - are we running in devnet?")
+		}
+		p2pKey = devnet.DeterministicP2PPrivKeyByIndex(int64(idx))
+
+		if idx != 0 {
+			firstGuardianName, err := devnet.GetFirstGuardianNameFromBootstrapPeers(*p2pBootstrap)
+			if err != nil {
+				logger.Fatal("failed to get first guardian name from bootstrap peers", zap.String("bootstrapPeers", *p2pBootstrap), zap.Error(err))
+			}
+			// try to connect to guardian-0
+			for {
+				_, err := net.LookupIP(firstGuardianName)
+				if err == nil {
+					break
+				}
+				logger.Info(fmt.Sprintf("Error resolving %s. Trying again...", firstGuardianName))
+				time.Sleep(time.Second)
+			}
+			// TODO this is a hack. If this is not the bootstrap Guardian, we wait 10s such that the bootstrap Guardian has enough time to start.
+			// This may no longer be necessary because now the p2p.go ensures that it can connect to at least one bootstrap peer and will
+			// exit the whole guardian if it is unable to. Sleeping here for a bit may reduce overall startup time by preventing unnecessary restarts, though.
+			logger.Info("This is not a bootstrap Guardian. Waiting another 10 seconds for the bootstrap guardian to come online.")
+			time.Sleep(time.Second * 10)
+		}
+	} else {
+		p2pKey, err = common.GetOrCreateNodeKey(logger, *nodeKeyPath)
+		if err != nil {
+			logger.Fatal("Failed to load node key", zap.Error(err))
+		}
+	}
+
+	// Set up telemetry if it is enabled. We can't do this until we have the p2p key and the guardian key.
+	// Telemetry is enabled by default in mainnet/testnet. In devnet it is disabled by default.
+	usingLoki := *telemetryLokiURL != ""
+	if !*disableTelemetry && (env != common.UnsafeDevNet || (env == common.UnsafeDevNet && usingLoki)) {
+		if !usingLoki {
+			logger.Fatal("Please specify --telemetryLokiURL or set --disableTelemetry=false")
+		}
+
+		// Get libp2p peer ID from private key
+		pk := p2pKey.GetPublic()
+		peerID, err := peer.IDFromPublicKey(pk)
+		if err != nil {
+			logger.Fatal("Failed to get peer ID from private key", zap.Error(err))
+		}
+
+		labels := map[string]string{
+			"node_name":     *nodeName,
+			"node_key":      peerID.String(),
+			"guardian_addr": ethcrypto.PubkeyToAddress(gk.PublicKey).String(),
+			"network":       *p2pNetworkID,
+			"version":       version.Version(),
+		}
+
+		skipPrivateLogs := !*publicRpcLogToTelemetry
+
+		var tm *telemetry.Telemetry
+		if usingLoki {
+			logger.Info("Using Loki telemetry logger",
+				zap.String("publicRpcLogDetail", *publicRpcLogDetailStr),
+				zap.Bool("logPublicRpcToTelemetry", *publicRpcLogToTelemetry))
+
+			tm, err = telemetry.NewLokiCloudLogger(context.Background(), logger, *telemetryLokiURL, "wormhole", skipPrivateLogs, labels)
+			if err != nil {
+				logger.Fatal("Failed to initialize telemetry", zap.Error(err))
+			}
+		}
+
+		defer tm.Close()
+		logger = tm.WrapLogger(logger) // Wrap logger with telemetry logger
+	}
+
 	// Validate the args for all the EVM chains. The last flag indicates if the chain is allowed in mainnet.
 	*ethContract = checkEvmArgs(logger, *ethRPC, *ethContract, "eth", true)
 	*bscContract = checkEvmArgs(logger, *bscRPC, *bscContract, "bsc", true)
@@ -647,7 +755,9 @@ func runNode(cmd *cobra.Command, args []string) {
 	*mantleContract = checkEvmArgs(logger, *mantleRPC, *mantleContract, "mantle", true)
 	*blastContract = checkEvmArgs(logger, *blastRPC, *blastContract, "blast", true)
 	*xlayerContract = checkEvmArgs(logger, *xlayerRPC, *xlayerContract, "xlayer", true)
+	*lineaContract = checkEvmArgs(logger, *lineaRPC, *lineaContract, "linea", true)
 	*berachainContract = checkEvmArgs(logger, *berachainRPC, *berachainContract, "berachain", false)
+	*snaxchainContract = checkEvmArgs(logger, *snaxchainRPC, *snaxchainContract, "snaxchain", true)
 
 	// These chains will only ever be testnet / devnet.
 	*sepoliaContract = checkEvmArgs(logger, *sepoliaRPC, *sepoliaContract, "sepolia", false)
@@ -656,12 +766,6 @@ func runNode(cmd *cobra.Command, args []string) {
 	*optimismSepoliaContract = checkEvmArgs(logger, *optimismSepoliaRPC, *optimismSepoliaContract, "optimismSepolia", false)
 	*holeskyContract = checkEvmArgs(logger, *holeskyRPC, *holeskyContract, "holesky", false)
 	*polygonSepoliaContract = checkEvmArgs(logger, *polygonSepoliaRPC, *polygonSepoliaContract, "polygonSepolia", false)
-
-	// Linea requires a couple of additional parameters.
-	*lineaContract = checkEvmArgs(logger, *lineaRPC, *lineaContract, "linea", false)
-	if (*lineaRPC != "") && (*lineaRollUpUrl == "" || *lineaRollUpContract == "") && env != common.UnsafeDevNet {
-		logger.Fatal("If --lineaRPC is specified, --lineaRollUpUrl and --lineaRollUpContract must also be specified")
-	}
 
 	if !argsConsistent([]string{*solanaContract, *solanaRPC}) {
 		logger.Fatal("Both --solanaContract and --solanaRPC must be set or both unset")
@@ -707,8 +811,8 @@ func runNode(cmd *cobra.Command, args []string) {
 		logger.Fatal("Either --aptosAccount, --aptosRPC and --aptosHandle must all be set or all unset")
 	}
 
-	if !argsConsistent([]string{*suiRPC, *suiWS, *suiMoveEventType}) {
-		logger.Fatal("Either --suiRPC, --suiWS and --suiMoveEventType must all be set or all unset")
+	if !argsConsistent([]string{*suiRPC, *suiMoveEventType}) {
+		logger.Fatal("Either --suiRPC and --suiMoveEventType must all be set or all unset")
 	}
 
 	if !argsConsistent([]string{*gatewayContract, *gatewayWS, *gatewayLCD}) {
@@ -725,10 +829,6 @@ func runNode(cmd *cobra.Command, args []string) {
 		publicRpcLogDetail = common.GrpcLogDetailFull
 	default:
 		logger.Fatal("--publicRpcLogDetail should be one of (none, minimal, full)")
-	}
-
-	if *nodeName == "" {
-		logger.Fatal("Please specify --nodeName")
 	}
 
 	// Complain about Infura on mainnet.
@@ -752,63 +852,6 @@ func runNode(cmd *cobra.Command, args []string) {
 	if strings.Contains(*ethRPC, "mainnet.infura.io") ||
 		strings.Contains(*polygonRPC, "polygon-mainnet.infura.io") {
 		logger.Fatal("Infura is known to send incorrect blocks - please use your own nodes")
-	}
-
-	// In devnet mode, we generate a deterministic guardian key and write it to disk.
-	if env == common.UnsafeDevNet {
-		err := devnet.GenerateAndStoreDevnetGuardianKey(*guardianKeyPath)
-		if err != nil {
-			logger.Fatal("failed to generate devnet guardian key", zap.Error(err))
-		}
-	}
-
-	// Database
-	db := db.OpenDb(logger, dataDir)
-	defer db.Close()
-
-	// Guardian key
-	gk, err := common.LoadGuardianKey(*guardianKeyPath, env == common.UnsafeDevNet)
-	if err != nil {
-		logger.Fatal("failed to load guardian key", zap.Error(err))
-	}
-
-	logger.Info("Loaded guardian key", zap.String(
-		"address", ethcrypto.PubkeyToAddress(gk.PublicKey).String()))
-
-	// Load p2p private key
-	var p2pKey libp2p_crypto.PrivKey
-	if env == common.UnsafeDevNet {
-		idx, err := devnet.GetDevnetIndex()
-		if err != nil {
-			logger.Fatal("Failed to parse hostname - are we running in devnet?")
-		}
-		p2pKey = devnet.DeterministicP2PPrivKeyByIndex(int64(idx))
-
-		if idx != 0 {
-			firstGuardianName, err := devnet.GetFirstGuardianNameFromBootstrapPeers(*p2pBootstrap)
-			if err != nil {
-				logger.Fatal("failed to get first guardian name from bootstrap peers", zap.String("bootstrapPeers", *p2pBootstrap), zap.Error(err))
-			}
-			// try to connect to guardian-0
-			for {
-				_, err := net.LookupIP(firstGuardianName)
-				if err == nil {
-					break
-				}
-				logger.Info(fmt.Sprintf("Error resolving %s. Trying again...", firstGuardianName))
-				time.Sleep(time.Second)
-			}
-			// TODO this is a hack. If this is not the bootstrap Guardian, we wait 10s such that the bootstrap Guardian has enough time to start.
-			// This may no longer be necessary because now the p2p.go ensures that it can connect to at least one bootstrap peer and will
-			// exit the whole guardian if it is unable to. Sleeping here for a bit may reduce overall startup time by preventing unnecessary restarts, though.
-			logger.Info("This is not a bootstrap Guardian. Waiting another 10 seconds for the bootstrap guardian to come online.")
-			time.Sleep(time.Second * 10)
-		}
-	} else {
-		p2pKey, err = common.GetOrCreateNodeKey(logger, *nodeKeyPath)
-		if err != nil {
-			logger.Fatal("Failed to load node key", zap.Error(err))
-		}
 	}
 
 	rpcMap := make(map[string]string)
@@ -852,8 +895,8 @@ func runNode(cmd *cobra.Command, args []string) {
 	}
 	rpcMap["scrollRPC"] = *scrollRPC
 	rpcMap["solanaRPC"] = *solanaRPC
+	rpcMap["snaxchainRPC"] = *snaxchainRPC
 	rpcMap["suiRPC"] = *suiRPC
-	rpcMap["suiWS"] = *suiWS
 	rpcMap["terraWS"] = *terraWS
 	rpcMap["terraLCD"] = *terraLCD
 	rpcMap["terra2WS"] = *terra2WS
@@ -882,54 +925,15 @@ func runNode(cmd *cobra.Command, args []string) {
 		rootCtxCancel()
 	}()
 
-	usingLoki := *telemetryLokiURL != ""
-
-	var hasTelemetryCredential bool = usingLoki
-
-	// Telemetry is enabled by default in mainnet/testnet. In devnet it is disabled by default
-	if !*disableTelemetry && (env != common.UnsafeDevNet || (env == common.UnsafeDevNet && hasTelemetryCredential)) {
-		if !hasTelemetryCredential {
-			logger.Fatal("Please specify --telemetryLokiURL or set --disableTelemetry=false")
-		}
-
-		// Get libp2p peer ID from private key
-		pk := p2pKey.GetPublic()
-		peerID, err := peer.IDFromPublicKey(pk)
-		if err != nil {
-			logger.Fatal("Failed to get peer ID from private key", zap.Error(err))
-		}
-
-		labels := map[string]string{
-			"node_name":     *nodeName,
-			"node_key":      peerID.String(),
-			"guardian_addr": ethcrypto.PubkeyToAddress(gk.PublicKey).String(),
-			"network":       *p2pNetworkID,
-			"version":       version.Version(),
-		}
-
-		skipPrivateLogs := !*publicRpcLogToTelemetry
-
-		var tm *telemetry.Telemetry
-		if usingLoki {
-			logger.Info("Using Loki telemetry logger",
-				zap.String("publicRpcLogDetail", *publicRpcLogDetailStr),
-				zap.Bool("logPublicRpcToTelemetry", *publicRpcLogToTelemetry))
-
-			tm, err = telemetry.NewLokiCloudLogger(context.Background(), logger, *telemetryLokiURL, "wormhole", skipPrivateLogs, labels)
-			if err != nil {
-				logger.Fatal("Failed to initialize telemetry", zap.Error(err))
-			}
-		}
-
-		defer tm.Close()
-		logger = tm.WrapLogger(logger) // Wrap logger with telemetry logger
-	}
-
 	// log golang version
 	logger.Info("golang version", zap.String("golang_version", runtime.Version()))
 
 	// Redirect ipfs logs to plain zap
 	ipfslog.SetPrimaryCore(logger.Core())
+
+	// Database
+	db := db.OpenDb(logger.With(zap.String("component", "badgerDb")), dataDir)
+	defer db.Close()
 
 	wormchainId := "wormchain"
 	if env == common.TestNet {
@@ -1296,13 +1300,11 @@ func runNode(cmd *cobra.Command, args []string) {
 
 	if shouldStart(lineaRPC) {
 		wc := &evm.WatcherConfig{
-			NetworkID:           "linea",
-			ChainID:             vaa.ChainIDLinea,
-			Rpc:                 *lineaRPC,
-			Contract:            *lineaContract,
-			CcqBackfillCache:    *ccqBackfillCache,
-			LineaRollUpUrl:      *lineaRollUpUrl,
-			LineaRollUpContract: *lineaRollUpContract,
+			NetworkID:        "linea",
+			ChainID:          vaa.ChainIDLinea,
+			Rpc:              *lineaRPC,
+			Contract:         *lineaContract,
+			CcqBackfillCache: *ccqBackfillCache,
 		}
 
 		watcherConfigs = append(watcherConfigs, wc)
@@ -1314,6 +1316,18 @@ func runNode(cmd *cobra.Command, args []string) {
 			ChainID:          vaa.ChainIDBerachain,
 			Rpc:              *berachainRPC,
 			Contract:         *berachainContract,
+			CcqBackfillCache: *ccqBackfillCache,
+		}
+
+		watcherConfigs = append(watcherConfigs, wc)
+	}
+
+	if shouldStart(snaxchainRPC) {
+		wc := &evm.WatcherConfig{
+			NetworkID:        "snaxchain",
+			ChainID:          vaa.ChainIDSnaxchain,
+			Rpc:              *snaxchainRPC,
+			Contract:         *snaxchainContract,
 			CcqBackfillCache: *ccqBackfillCache,
 		}
 
@@ -1407,7 +1421,6 @@ func runNode(cmd *cobra.Command, args []string) {
 			NetworkID:        "sui",
 			ChainID:          vaa.ChainIDSui,
 			Rpc:              *suiRPC,
-			Websocket:        *suiWS,
 			SuiMoveEventType: *suiMoveEventType,
 		}
 		watcherConfigs = append(watcherConfigs, wc)
@@ -1559,13 +1572,13 @@ func runNode(cmd *cobra.Command, args []string) {
 		node.GuardianOptionDatabase(db),
 		node.GuardianOptionWatchers(watcherConfigs, ibcWatcherConfig),
 		node.GuardianOptionAccountant(*accountantWS, *accountantContract, *accountantCheckEnabled, accountantWormchainConn, *accountantNttContract, accountantNttWormchainConn),
-		node.GuardianOptionGovernor(*chainGovernorEnabled),
+		node.GuardianOptionGovernor(*chainGovernorEnabled, *governorFlowCancelEnabled),
 		node.GuardianOptionGatewayRelayer(*gatewayRelayerContract, gatewayRelayerWormchainConn),
 		node.GuardianOptionQueryHandler(*ccqEnabled, *ccqAllowedRequesters),
 		node.GuardianOptionAdminService(*adminSocketPath, ethRPC, ethContract, rpcMap),
-		node.GuardianOptionP2P(p2pKey, *p2pNetworkID, *p2pBootstrap, *nodeName, *disableHeartbeatVerify, *p2pPort, *ccqP2pBootstrap, *ccqP2pPort, *ccqAllowedPeers, *gossipAdvertiseAddress, ibc.GetFeatures),
+		node.GuardianOptionP2P(p2pKey, *p2pNetworkID, *p2pBootstrap, *nodeName, *subscribeToVAAs, *disableHeartbeatVerify, *p2pPort, *ccqP2pBootstrap, *ccqP2pPort, *ccqAllowedPeers, *gossipAdvertiseAddress, ibc.GetFeatures),
 		node.GuardianOptionStatusServer(*statusAddr),
-		node.GuardianOptionProcessor(),
+		node.GuardianOptionProcessor(*p2pNetworkID),
 	}
 
 	if shouldStart(publicGRPCSocketPath) {

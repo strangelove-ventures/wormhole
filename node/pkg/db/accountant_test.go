@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
-	"sort"
 	"testing"
 	"time"
 
@@ -54,13 +53,10 @@ func TestAcctIsPendingTransfer(t *testing.T) {
 
 func TestAcctStoreAndDeletePendingTransfers(t *testing.T) {
 	dbPath := t.TempDir()
-	db, err := Open(dbPath)
-	if err != nil {
-		t.Error("failed to open database")
-	}
+	db := OpenDb(zap.NewNop(), &dbPath)
 	defer db.Close()
 
-	tokenBridgeAddr, _ := vaa.StringToAddress("0x0290fb167208af455bb137780163b7b7a9a10c16")
+	tokenBridgeAddr, err := vaa.StringToAddress("0x0290fb167208af455bb137780163b7b7a9a10c16")
 	require.NoError(t, err)
 
 	msg1 := &common.MessagePublication{
@@ -119,14 +115,10 @@ func TestAcctStoreAndDeletePendingTransfers(t *testing.T) {
 }
 
 func TestAcctGetEmptyData(t *testing.T) {
+	logger := zap.NewNop()
 	dbPath := t.TempDir()
-	db, err := Open(dbPath)
-	if err != nil {
-		t.Error("failed to open database")
-	}
+	db := OpenDb(logger, &dbPath)
 	defer db.Close()
-
-	logger, _ := zap.NewDevelopment()
 
 	pendings, err := db.AcctGetData(logger)
 	require.NoError(t, err)
@@ -134,18 +126,14 @@ func TestAcctGetEmptyData(t *testing.T) {
 }
 
 func TestAcctGetData(t *testing.T) {
+	logger := zap.NewNop()
 	dbPath := t.TempDir()
-	db, err := Open(dbPath)
-	if err != nil {
-		t.Error("failed to open database")
-	}
+	db := OpenDb(logger, &dbPath)
 	defer db.Close()
-
-	logger, _ := zap.NewDevelopment()
 
 	// Store some unrelated junk in the db to make sure it gets skipped.
 	junk := []byte("ABC123")
-	err = db.db.Update(func(txn *badger.Txn) error {
+	err := db.db.Update(func(txn *badger.Txn) error {
 		if err := txn.Set(junk, junk); err != nil {
 			return err
 		}
@@ -201,14 +189,13 @@ func TestAcctGetData(t *testing.T) {
 	assert.Equal(t, *msg2, *pendings[1])
 }
 
-func TestAcctLoadingOldPendings(t *testing.T) {
+func TestAcctLoadingWhereOldPendingsGetDropped(t *testing.T) {
 	dbPath := t.TempDir()
-	db, err := Open(dbPath)
-	if err != nil {
-		t.Error("failed to open database")
-	}
+	db := OpenDb(zap.NewNop(), &dbPath)
 	defer db.Close()
 	defer os.Remove(dbPath)
+
+	logger := zap.NewNop()
 
 	tokenBridgeAddr, err := vaa.StringToAddress("0x0290fb167208af455bb137780163b7b7a9a10c16")
 	require.NoError(t, err)
@@ -249,27 +236,20 @@ func TestAcctLoadingOldPendings(t *testing.T) {
 	err = db.AcctStorePendingTransfer(pending2)
 	require.Nil(t, err)
 
-	logger := zap.NewNop()
+	// When we reload the data, the first one should get dropped, so we should get back only one.
 	pendings, err := db.AcctGetData(logger)
 	require.NoError(t, err)
-	require.Equal(t, 2, len(pendings))
+	require.Equal(t, 1, len(pendings))
 
-	// Updated old pending events get placed at the end, so we need to sort into timestamp order.
-	sort.SliceStable(pendings, func(i, j int) bool {
-		return pendings[i].Timestamp.Before(pendings[j].Timestamp)
-	})
+	assert.Equal(t, *pending2, *pendings[0])
 
-	assert.Equal(t, *pending1, *pendings[0])
-	assert.Equal(t, *pending2, *pendings[1])
-
-	// Make sure we can reload the updated pendings.
+	// Make sure we can still reload things after deleting the old one.
 	pendings2, err := db.AcctGetData(logger)
 
 	require.Nil(t, err)
-	require.Equal(t, 2, len(pendings2))
+	require.Equal(t, 1, len(pendings2))
 
-	assert.Equal(t, pending1, pendings2[0])
-	assert.Equal(t, pending2, pendings2[1])
+	assert.Equal(t, pending2, pendings2[0])
 }
 
 func (d *Database) acctStoreOldPendingTransfer(t *testing.T, msg *common.MessagePublication) {
