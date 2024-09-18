@@ -40,7 +40,7 @@ pub fn execute(
     }
 }
 
-pub fn submit_vaas(
+fn submit_vaas(
     mut deps: DepsMut<WormholeQuery>,
     info: MessageInfo,
     vaas: Vec<Binary>,

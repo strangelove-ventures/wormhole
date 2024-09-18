@@ -1,6 +1,6 @@
 use crate::{
-    contract::{query, submit_vaas},
-    msg::{AllChannelChainsResponse, QueryMsg},
+    contract::{execute, query},
+    msg::{AllChannelChainsResponse, ExecuteMsg, QueryMsg},
     tests::test_utils::{create_gov_vaa_body, create_transfer_vaa_body, sign_vaa_body},
 };
 use anyhow::Error;
@@ -48,7 +48,14 @@ pub fn add_channel_chain_happy_path() -> anyhow::Result<(), Error> {
     let add_sei_channel_body = create_gov_vaa_body(1, Chain::Sei, *b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00channel-0");
     let (_, add_sei_vaa_binary) = sign_vaa_body(wh.clone(), add_sei_channel_body);
 
-    let submissions = submit_vaas(mut_deps.branch(), info.clone(), vec![add_sei_vaa_binary]);
+    let submissions = execute(
+        mut_deps.branch(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::SubmitUpdateChannelChain {
+            vaas: vec![add_sei_vaa_binary],
+        },
+    );
 
     assert!(
         submissions.is_ok(),
@@ -116,10 +123,13 @@ pub fn add_channel_chain_happy_path_multiple() -> anyhow::Result<(), Error> {
     let (_, add_sei_vaa_binary) = sign_vaa_body(wh.clone(), add_sei_channel_body);
 
     // add a channel for injective and update the channel set for sei
-    let submissions = submit_vaas(
+    let submissions = execute(
         mut_deps.branch(),
+        mock_env(),
         info.clone(),
-        vec![add_sei_vaa_binary, add_inj_vaa_bin],
+        ExecuteMsg::SubmitUpdateChannelChain {
+            vaas: vec![add_sei_vaa_binary, add_inj_vaa_bin],
+        },
     );
 
     assert!(
@@ -203,17 +213,27 @@ pub fn reject_invalid_add_channel_chain_vaas() {
     let add_channel_body = create_gov_vaa_body(1, Chain::Wormchain, *b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00channel-0");
     let (_, add_vaa_binary) = sign_vaa_body(wh.clone(), add_channel_body);
 
-    let submissions = submit_vaas(mut_deps.branch(), info.clone(), vec![add_vaa_binary]);
+    let submissions = execute(
+        mut_deps.branch(),
+        mock_env(),
+        info.clone(),
+        ExecuteMsg::SubmitUpdateChannelChain {
+            vaas: vec![add_vaa_binary],
+        },
+    );
 
     assert!(
         submissions.is_err(),
         "Cannot add a channel from Gateway to Gateway"
     );
 
-    let submissions = submit_vaas(
+    let submissions = execute(
         mut_deps.branch(),
+        mock_env(),
         info.clone(),
-        vec![Binary::from(vec![0u8; 32])],
+        ExecuteMsg::SubmitUpdateChannelChain {
+            vaas: vec![Binary::from(vec![0u8; 32])],
+        },
     );
 
     assert!(
@@ -224,14 +244,28 @@ pub fn reject_invalid_add_channel_chain_vaas() {
     let add_channel_body = create_transfer_vaa_body(1);
     let (_, add_vaa_binary) = sign_vaa_body(wh.clone(), add_channel_body);
 
-    let submissions = submit_vaas(mut_deps.branch(), info.clone(), vec![add_vaa_binary]);
+    let submissions = execute(
+        mut_deps.branch(),
+        mock_env(),
+        info.clone(),
+        ExecuteMsg::SubmitUpdateChannelChain {
+            vaas: vec![add_vaa_binary],
+        },
+    );
 
     assert!(submissions.is_err(), "Can only execute governance vaas");
 
     let add_channel_body = create_gov_vaa_body(1, Chain::Osmosis, *b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00channel-0");
     let (_, add_vaa_binary) = sign_vaa_body(wh.clone(), add_channel_body);
 
-    let submissions = submit_vaas(mut_deps.branch(), info.clone(), vec![add_vaa_binary]);
+    let submissions = execute(
+        mut_deps.branch(),
+        mock_env(),
+        info.clone(),
+        ExecuteMsg::SubmitUpdateChannelChain {
+            vaas: vec![add_vaa_binary],
+        },
+    );
 
     assert!(
         submissions.is_ok(),
@@ -255,7 +289,14 @@ pub fn reject_invalid_add_channel_chain_vaas() {
     };
     let (_, add_vaa_binary) = sign_vaa_body(wh.clone(), add_channel_body);
 
-    let submissions = submit_vaas(mut_deps.branch(), info.clone(), vec![add_vaa_binary]);
+    let submissions = execute(
+        mut_deps.branch(),
+        mock_env(),
+        info.clone(),
+        ExecuteMsg::SubmitUpdateChannelChain {
+            vaas: vec![add_vaa_binary],
+        },
+    );
 
     assert!(
         submissions.is_err(),
@@ -294,10 +335,13 @@ pub fn reject_replayed_add_channel_chain_vaas() {
     let add_channel_body = create_gov_vaa_body(1, Chain::Osmosis, *b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00channel-0");
     let (_, add_vaa_binary) = sign_vaa_body(wh.clone(), add_channel_body);
 
-    let submissions = submit_vaas(
+    let submissions = execute(
         mut_deps.branch(),
+        mock_env(),
         info.clone(),
-        vec![add_vaa_binary.clone()],
+        ExecuteMsg::SubmitUpdateChannelChain {
+            vaas: vec![add_vaa_binary.clone()],
+        },
     );
 
     assert!(
@@ -305,7 +349,14 @@ pub fn reject_replayed_add_channel_chain_vaas() {
         "Can add a channel from Osmosis to Gateway"
     );
 
-    let submissions = submit_vaas(mut_deps.branch(), info.clone(), vec![add_vaa_binary]);
+    let submissions = execute(
+        mut_deps.branch(),
+        mock_env(),
+        info.clone(),
+        ExecuteMsg::SubmitUpdateChannelChain {
+            vaas: vec![add_vaa_binary],
+        },
+    );
 
     assert!(submissions.is_err(), "Cannot replay the same VAA");
 }
