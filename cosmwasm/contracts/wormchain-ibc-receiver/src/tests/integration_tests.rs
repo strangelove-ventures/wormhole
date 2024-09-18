@@ -70,7 +70,7 @@ pub fn add_channel_chain_happy_path() -> anyhow::Result<(), Error> {
         querier: QuerierWrapper::new(&empty_mock_querier),
     };
 
-    let channel_binary = query(readonly_deps.clone(), env, QueryMsg::AllChannelChains {})?;
+    let channel_binary = query(readonly_deps, env, QueryMsg::AllChannelChains {})?;
     let channel: AllChannelChainsResponse = from_binary(&channel_binary)?;
 
     assert_eq!(channel.channels_chains.len(), 1);
