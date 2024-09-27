@@ -207,7 +207,7 @@ replace (
 	github.com/ChainSafe/go-schnorrkel/1 => github.com/ChainSafe/go-schnorrkel v1.0.0
 	// specify the version of btcd used so we don't get the btcec issue
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.2
-	github.com/cosmos/cosmos-sdk => github.com/strangelove-ventures/wh-cosmos-sdk v0.0.0-20240724172004-1caf8602726b
+	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.45.15-ics
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
 
 	//github.com/strangelove-ventures/interchaintest/v4 => ../../../../../strangelove-ventures/interchaintest_v4
