@@ -45,7 +45,6 @@ pub fn create_app() -> MockApp {
         },
         |deps, env, msg| {
             query(deps.into_empty(), env, msg)
-                // .map(|res| Binary::from(res.0))
                 .map_err(|anyhow_err| StdError::generic_err(anyhow_err.to_string()))
         },
     )));
