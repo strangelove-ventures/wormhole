@@ -6,3 +6,6 @@ pub mod state;
 
 #[cfg(test)]
 pub mod tests;
+
+#[cfg(all(test, feature = "test-interface"))]
+pub mod interface;

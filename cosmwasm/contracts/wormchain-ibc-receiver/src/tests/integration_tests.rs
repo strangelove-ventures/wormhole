@@ -3,9 +3,9 @@ use crate::{
     msg::{AllChannelChainsResponse, ExecuteMsg, QueryMsg},
     tests::test_utils::{create_gov_vaa_body, create_transfer_vaa_body, sign_vaa_body},
 };
+use abstract_cw_multi_test::{no_init, AppBuilder, ContractWrapper, Executor, WasmKeeper};
 use anyhow::Error;
 use cosmwasm_std::{testing::MockApi, Addr, Binary, Empty, StdError};
-use cw_multi_test::{no_init, AppBuilder, ContractWrapper, Executor, WasmKeeper};
 use wormhole_bindings::{fake::WormholeKeeper, WormholeQuery};
 use wormhole_sdk::{
     ibc_receiver::{Action, GovernancePacket},
@@ -13,8 +13,8 @@ use wormhole_sdk::{
     Chain, GOVERNANCE_EMITTER,
 };
 
-type WormholeApp = cw_multi_test::App<
-    cw_multi_test::BankKeeper,
+type WormholeApp = abstract_cw_multi_test::App<
+    abstract_cw_multi_test::BankKeeper,
     MockApi,
     cosmwasm_std::MemoryStorage,
     WormholeKeeper,

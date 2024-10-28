@@ -5,15 +5,15 @@ authors = ["Wormhole Project Contributors"]
 edition = "2021"
 
 [features]
-fake = ["dep:cw-multi-test", "dep:k256", "dep:serde_wormhole"]
+fake = ["dep:abstract-cw-multi-test", "dep:k256", "dep:serde_wormhole"]
 
 [dependencies]
 anyhow = "1"
-cosmwasm-schema = "1"
-cosmwasm-std = "1"
+cosmwasm-schema = "1.5.8"
+cosmwasm-std = "1.5.8"
 schemars = "0.8.8"
 serde = { version = "1.0.137", default-features = false, features = ["derive"] }
 serde_wormhole = { workspace = true, optional = true }
-cw-multi-test = { version = "0.20.0", optional = true }
+abstract-cw-multi-test = { version = "1.0.1", optional = true }
 k256 = { version = "0.11", optional = true, features = ["ecdsa", "keccak256"] }
 wormhole-sdk.workspace = true
