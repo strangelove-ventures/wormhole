@@ -26,12 +26,15 @@ schemars = "0.8.8"
 serde = { version = "1.0.137", default-features = false, features = ["derive"] }
 serde_wormhole.workspace = true
 thiserror = { version = "1.0.31" }
-tinyvec = { version = "1.6", default-features = false, features = ["alloc", "serde"]}
+tinyvec = { version = "1.6", default-features = false, features = [
+    "alloc",
+    "serde",
+] }
 wormhole-bindings = "0.1.0"
 wormhole-sdk = { workspace = true, features = ["schemars"] }
 
 [dev-dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
-cw-multi-test = "0.13.2"
+cw-multi-test = "0.20"
 serde-json-wasm = "0.4"
 wormhole-bindings = { version = "0.1", features = ["fake"] }
