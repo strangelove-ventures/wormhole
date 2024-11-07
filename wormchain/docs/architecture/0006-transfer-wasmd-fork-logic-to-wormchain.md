@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-The Wormchain repo dependeds on a fork of `wasmd` to prevent certain types of Wasm transactions from being accepted by the chain. The Strangelove team proposed migrating the logic to an Ante Handler on chain to remove the need to maintain a fork of `wasmd`.
+The Wormchain repo depends on a fork of `wasmd` to prevent certain types of Wasm transactions from being accepted by the chain. The Strangelove team proposed migrating the logic to an Ante Handler on chain to remove the need to maintain a fork of `wasmd`.
 
 ## Decision
 

@@ -163,6 +163,7 @@ Solana's
 spydk
 Starport
 statesync
+Strangelove
 struct
 structs
 subdenom
@@ -194,6 +195,7 @@ varint
 varints
 vimdiff
 vphash
+wasmd
 wasmhooks
 wasms
 WORKDIR
