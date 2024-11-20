@@ -115,6 +115,9 @@ ictest-chain-start: rm-testcache
 ictest-malformed-payload: rm-testcache
 	cd interchaintest && go test -race -v -run ^TestMalformedPayload$$ ./...
 
+ictest-slashing-params-update-vaa: rm-testcache
+	cd interchaintest && go test -race -v -run ^TestSlashingParamsUpdateVaa$$ ./...
+
 ictest-upgrade-failure: rm-testcache
 	cd interchaintest && go test -race -v -run ^TestUpgradeFailure$$ ./...
 
@@ -127,4 +130,4 @@ ictest-wasmd-ante: rm-testcache
 ictest-wormchain: rm-testcache
 	cd interchaintest && go test -race -v -run ^TestWormchain$$ ./...
 
-.PHONY: ictest-cancel-upgrade ictest-chain-start ictest-malformed-payload ictest-upgrade-failure ictest-upgrade ictest-wasmd-ante ictest-wormchain
+.PHONY: ictest-cancel-upgrade ictest-chain-start ictest-malformed-payload ictest-slashing-params-update-vaa ictest-upgrade-failure ictest-upgrade ictest-wasmd-ante ictest-wormchain

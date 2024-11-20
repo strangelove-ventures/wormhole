@@ -61,6 +61,7 @@ jobs:
           - "ictest-cancel-upgrade"
           - "ictest-chain-start"
           - "ictest-malformed-payload"
+          - "ictest-slashing-params-update-vaa"
           - "ictest-upgrade-failure"
           - "ictest-upgrade"
           - "ictest-wasmd-ante"
