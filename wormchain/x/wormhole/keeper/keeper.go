@@ -67,7 +67,7 @@ func (k *Keeper) SetUpgradeKeeper(keeper *upgradekeeper.Keeper) {
 	k.setUpgrade = true
 }
 
-func (k *Keeper) SetStakingKeeper(keeper slashingkeeper.Keeper) {
+func (k *Keeper) SetSlashingKeeper(keeper slashingkeeper.Keeper) {
 	k.slashingKeeper = keeper
 	k.setSlashing = true
 }
