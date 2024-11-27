@@ -3,10 +3,12 @@ package keeper
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
+	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	"github.com/wormhole-foundation/wormchain/x/wormhole/types"
 	"github.com/wormhole-foundation/wormhole/sdk/vaa"
 )
@@ -87,6 +89,34 @@ func (k msgServer) ExecuteGovernanceVAA(goCtx context.Context, msg *types.MsgExe
 		if err != nil {
 			return nil, err
 		}
+	case vaa.ActionUpdateIBCClient:
+		if len(payload) != 128 {
+			return nil, types.ErrInvalidGovernancePayloadLength
+		}
+
+		subjectClientId := string(payload[0:64])
+		substituteClientId := string(payload[64:128])
+
+		// TODO: JOEL - REMOVE
+		// fmt.Println("Title: Update IBC Client")
+		// fmt.Printf("Description: Updates Client %s with %s\n", subjectClientId, substituteClientId)
+		// fmt.Println("Subject Client ID:", subjectClientId)
+		// fmt.Println("Substitute Client ID:", substituteClientId)
+
+		msg := clienttypes.ClientUpdateProposal{
+			Title:              "Update IBC Client",
+			Description:        fmt.Sprintf("Updates Client %s with %s", subjectClientId, substituteClientId),
+			SubjectClientId:    subjectClientId,
+			SubstituteClientId: substituteClientId,
+		}
+
+		err := k.clientKeeper.ClientUpdateProposal(ctx, &msg)
+		if err != nil {
+			return nil, err
+		}
+
+		fmt.Println("Update IBC Client")
+
 	default:
 		return nil, types.ErrUnknownGovernanceAction
 
