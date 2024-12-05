@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -94,20 +95,19 @@ func (k msgServer) ExecuteGovernanceVAA(goCtx context.Context, msg *types.MsgExe
 			return nil, types.ErrInvalidGovernancePayloadLength
 		}
 
-		subjectClientId := string(payload[0:64])
-		substituteClientId := string(payload[64:128])
-
-		// TODO: JOEL - REMOVE
-		// fmt.Println("Title: Update IBC Client")
-		// fmt.Printf("Description: Updates Client %s with %s\n", subjectClientId, substituteClientId)
-		// fmt.Println("Subject Client ID:", subjectClientId)
-		// fmt.Println("Substitute Client ID:", substituteClientId)
+		subjectClientId := string(bytes.TrimRight(payload[0:64], "\x00"))
+		substituteClientId := string(bytes.TrimRight(payload[64:128], "\x00"))
 
 		msg := clienttypes.ClientUpdateProposal{
 			Title:              "Update IBC Client",
 			Description:        fmt.Sprintf("Updates Client %s with %s", subjectClientId, substituteClientId),
 			SubjectClientId:    subjectClientId,
 			SubstituteClientId: substituteClientId,
+		}
+
+		err = msg.ValidateBasic()
+		if err != nil {
+			return nil, err
 		}
 
 		err := k.clientKeeper.ClientUpdateProposal(ctx, &msg)
