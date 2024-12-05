@@ -90,7 +90,7 @@ func (k msgServer) ExecuteGovernanceVAA(goCtx context.Context, msg *types.MsgExe
 		if err != nil {
 			return nil, err
 		}
-	case vaa.ActionUpdateIBCClient:
+	case vaa.ActionIBCClientUpdate:
 		if len(payload) != 128 {
 			return nil, types.ErrInvalidGovernancePayloadLength
 		}
